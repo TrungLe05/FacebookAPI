@@ -1,0 +1,16 @@
+server:
+  port: 8080
+
+facebook:
+  page:
+    id: 1123167644202821
+    access-token: EAGAS0YnoFvABRDM8eNUEIlXJzM0CcV5ECU7PRXjE32lYJkjUrMMFYxCdbiryZAKvZBJ1GRGbZAg2xoZBBVY2R1lpBIscqNZA6yeMKS7nxMWfsiZBy44ujgWNm7xL0A058L2a7BXZBgewIvG8fFCEcVst3YUbkontQMGJ9pJ48q3h32Y0mAH42aYEOYDWeZC0beB2WsZBwhRbUaFNGlPQmLfzUOmFZBZAOJ67ZC0G4ZBOjzFW7
+  graph:
+    api:
+      url: https://graph.facebook.com/v19.0
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /api-docs
