@@ -1,0 +1,21 @@
+# Maven
+**/target/
+**/.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+**/.idea/
+**/*.iml
+**/.vscode/
+
+# Application secrets - QUAN TRỌNG
+**/application.yml
+**/application.properties
+
+# Logs
+**/*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+.env

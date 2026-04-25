@@ -1,0 +1,16 @@
+
+server:
+  port: 3001
+
+facebook:
+  app-secret: ${APP_SECRET}
+  verify-token: ${VERIFY_TOKEN}
+
+spring:
+  application:
+    name: webhook-service
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
