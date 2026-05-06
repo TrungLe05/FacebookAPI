@@ -1,0 +1,62 @@
+server:
+  port: 3002
+
+spring:
+  application:
+    name: core-service
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: core-service-group
+      auto-offset-reset: earliest
+      # Không dùng type headers từ producer để linh hoạt hơn
+      properties:
+        spring.json.trusted.packages: "*"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 10
+          max-idle: 5
+
+facebook:
+  page-access-token: ${PAGE_ACCESS_TOKEN:DISABLED}
+  base-url: https://graph.facebook.com/v21.0
+  graph-api-version: v21.0
+  page-id: ${PAGE_ID:}
+  mock-enabled: true
+
+ai:
+  gemini:
+    api-key: ${GEMINI_API_KEY:DISABLED}
+    model: gemini-1.5-flash-latest
+    endpoint: https://generativelanguage.googleapis.com/v1beta/models
+  groq:
+    api-key: ${GROQ_API_KEY:DISABLED}
+    model: llama-3.1-8b-instant
+    endpoint: https://api.groq.com/openai/v1/chat/completions
+  anthropic:
+    api-key: ${ANTHROPIC_KEY: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}
+    model: claude-haiku-4-5-20251001
+    endpoint: https://api.anthropic.com/v1/messages
+
+spam:
+  url-pattern: "(https?://|bit\\.ly|tinyurl\\.com|t\\.co|goo\\.gl|fb\\.me)"
+  repeat-threshold: 3
+  repeat-window-hours: 24
+  status-ttl-seconds: 604800   # 7 ngày
+
+logging:
+  level:
+    com.dev.coreservice: DEBUG
+    org.springframework.kafka: INFO

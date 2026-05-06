@@ -31,10 +31,10 @@ public class WebhookController {
 
     @PostMapping
     public ResponseEntity<String> receiveWebhook(
-            @RequestBody String payload,
+            @RequestBody byte[] rawBody,
             @RequestHeader("X-Hub-Signature-256") String signature) throws Exception {
 
-        webhookService.processWebhook(payload, signature);
+        webhookService.processWebhook(rawBody, signature);
         return ResponseEntity.ok("EVENT_RECEIVED");
     }
 }

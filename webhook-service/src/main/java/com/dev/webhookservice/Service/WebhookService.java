@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
@@ -28,18 +29,18 @@ public class WebhookService {
 
     private static final String TOPIC = "raw_events";
 
-    public void processWebhook(String payload, String signature) throws Exception {
-        if (!verifySignature(payload, signature)) {
+    public void processWebhook(byte[] rawBody, String signature) throws Exception {
+        if (!verifySignature(rawBody, signature)) {
             throw new RuntimeException("Invalid signature");
         }
 
+        String payload = new String(rawBody, StandardCharsets.UTF_8);
         ObjectMapper mapper = new ObjectMapper();
         JsonNode root = mapper.readTree(payload);
         String object = root.get("object").asText();
 
         if ("page".equals(object)) {
             root.get("entry").forEach(entry -> {
-                // Xử lý feed (comment, post)
                 if (entry.has("changes") && !entry.get("changes").isNull()) {
                     entry.get("changes").forEach(change -> {
                         try {
@@ -52,7 +53,6 @@ public class WebhookService {
                     });
                 }
 
-                // Xử lý messages
                 if (entry.has("messaging") && !entry.get("messaging").isNull()) {
                     entry.get("messaging").forEach(msg -> {
                         try {
@@ -65,6 +65,20 @@ public class WebhookService {
                     });
                 }
             });
+        }
+    }
+
+    private boolean verifySignature(byte[] rawBody, String signature) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(
+                    appSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            String expected = "sha256=" +
+                    HexFormat.of().formatHex(mac.doFinal(rawBody));
+            return expected.equals(signature);
+        } catch (Exception e) {
+            log.error("Error verifying signature", e);
+            return false;
         }
     }
 
@@ -85,26 +99,26 @@ public class WebhookService {
         String field = change.get("field").asText(); // "feed" (comment) hoặc "messages"
         JsonNode value = change.get("value");
 
+        // Lấy comment ID và post ID từ value node (Facebook feed event)
+        String commentId = value.path("comment_id").asText(null);
+        if (commentId == null || commentId.isBlank()) {
+            // Fallback: một số event dùng "id" trực tiếp
+            commentId = value.path("id").asText(null);
+        }
+        String postId = value.path("post_id").asText(null);
+
         return NormalizedEvent.builder()
                 .eventId(UUID.randomUUID().toString())
                 .eventType(field.contains("feed") ? "comment" : "message")
                 .pageId(entry.get("id").asText())
                 .senderId(value.path("from").path("id").asText(""))
                 .content(value.path("message").asText(""))
+                .commentId(commentId)
+                .postId(postId)
                 .timestamp(System.currentTimeMillis())
                 .rawPayload(new ObjectMapper().convertValue(value, Map.class))
                 .build();
     }
 
-    private boolean verifySignature(String payload, String signature) {
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(appSecret.getBytes(), "HmacSHA256"));
-            String expected = "sha256=" +
-                    HexFormat.of().formatHex(mac.doFinal(payload.getBytes()));
-            return expected.equals(signature);
-        } catch (Exception e) {
-            return false;
-        }
-    }
+
 }
