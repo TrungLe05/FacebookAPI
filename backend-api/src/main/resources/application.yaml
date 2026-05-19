@@ -1,0 +1,22 @@
+server:
+  port: 3000
+
+facebook:
+  page:
+    id: ${PAGE_ID:1123167644202821}
+    access-token: ${PAGE_ACCESS_TOKEN:EAGAS0YnoFvABReftaKmoPu1kvO5GfYukkHLp5NZBObYdvfLBxZAFcCEuZAC2yHgrZClmlcLXmjiPVK193QoyQzZC1kBHrGoT8S0jH8k98QfAqpNuQiuzvp7PIoYbW1MNCf9sS5N8tZAJ0bJqaAWdE6iFKvmQfqGbBfYQfnwTm7X1l25ZC1TcQ4GAqOmNKZCDsZCvtBLtiHLVZA8x5ONiaBdsZCtJyrHUV3OhR9HaQTzek3BzHqX}
+  graph:
+    api:
+      url: https//graph.facebook.com/v19.0
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/BlogAI
+    username: admin
+    password: admin
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
