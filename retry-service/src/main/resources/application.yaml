@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: retry-service
+  kafka:
+    bootstrap-servers: localhost:9092
+
+server:
+  port: 3003
+
+logging:
+  level:
+    com.dev.retryservice: INFO
