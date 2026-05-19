@@ -4,6 +4,7 @@ import com.dev.webhookservice.Dtos.NormalizedEvent;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,25 +31,45 @@ public class WebhookService {
     private static final String TOPIC = "raw_events";
 
     public void processWebhook(byte[] rawBody, String signature) throws Exception {
-        if (!verifySignature(rawBody, signature)) {
-            throw new RuntimeException("Invalid signature");
+        log.info("Raw body: {}", rawBody);
+        String payload = new String(rawBody, StandardCharsets.UTF_8);
+        log.info("=== Incoming webhook payload ===\n{}", payload);
+
+        // Facebook Test button (trên Dashboard) không gửi signature
+        // => Chỉ verify khi signature tồn tại
+        if (signature != null) {
+            if (!verifySignature(rawBody, signature)) {
+                log.error("Signature verification FAILED!\n  Received : {}\n  Payload  : {}", signature, payload);
+                throw new RuntimeException("Invalid signature");
+            }
+            log.info("Signature verified OK.");
+        } else {
+            log.warn("No signature header — skipping verification (likely Facebook Dashboard test)");
         }
 
-        String payload = new String(rawBody, StandardCharsets.UTF_8);
         ObjectMapper mapper = new ObjectMapper();
         JsonNode root = mapper.readTree(payload);
-        String object = root.get("object").asText();
+        log.info("Json node Root: {}", root);
+        String object = root.path("object").asText("");
+        log.info("Webhook object type: '{}'", object);
 
         if ("page".equals(object)) {
-            root.get("entry").forEach(entry -> {
+            JsonNode entries = root.get("entry");
+            if (entries == null || entries.isEmpty()) {
+                log.warn("No 'entry' array found in payload");
+                return;
+            }
+            entries.forEach(entry -> {
+                log.info("Processing entry: {}", entry);
                 if (entry.has("changes") && !entry.get("changes").isNull()) {
                     entry.get("changes").forEach(change -> {
                         try {
                             NormalizedEvent event = normalizeEvent(change, entry);
                             kafkaTemplate.send(TOPIC, event.getEventId(), event);
-                            log.info("Published feed event: {}", event.getEventType());
+                            log.info("Published feed event: {} | commentId={} | content='{}'",
+                                    event.getEventType(), event.getCommentId(), event.getContent());
                         } catch (Exception e) {
-                            log.error("Error processing feed event", e);
+                            log.error("Error processing feed event: {}", e.getMessage(), e);
                         }
                     });
                 }
@@ -58,13 +79,15 @@ public class WebhookService {
                         try {
                             NormalizedEvent event = normalizeMessage(msg, entry);
                             kafkaTemplate.send(TOPIC, event.getEventId(), event);
-                            log.info("Published message event: {}", event.getEventType());
+                            log.info("Published message event: {} | senderId={}", event.getEventType(), event.getSenderId());
                         } catch (Exception e) {
-                            log.error("Error processing message event", e);
+                            log.error("Error processing message event: {}", e.getMessage(), e);
                         }
                     });
                 }
             });
+        } else {
+            log.warn("Received unknown object type: '{}'. Full payload: {}", object, payload);
         }
     }
 

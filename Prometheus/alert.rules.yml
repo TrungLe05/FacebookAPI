@@ -1,0 +1,59 @@
+groups:
+  - name: kafka_dead_letter_alerts
+    rules:
+      - alert: DeadLetterQueueReceived
+        expr: >
+          increase(
+            kafka_topic_partition_current_offset{topic="dead_letter"}[1m]
+          ) > 0
+        for: 0m          # fire ngay, không chờ
+        labels:
+          severity: critical
+        annotations:
+          summary: "☠️ Có message mới vào Dead Letter Queue"
+          description: >
+            Topic dead_letter vừa nhận message mới.
+            Command không thể xử lý sau 3 lần retry.
+            Vào Kafka UI http://localhost:8081 để xem chi tiết.
+
+  - name: kafka_system_alerts
+    rules:
+      - alert: KafkaConsumerLagHigh
+        expr: kafka_consumer_group_lag > 100
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consumer lag cao"
+          description: >
+            Consumer group {{ $labels.consumergroup }}
+            lag {{ $value }} message trên topic {{ $labels.topic }}.
+
+      - alert: SendFailedTopicActive
+        expr: >
+          increase(
+            kafka_topic_partition_current_offset{topic="send_failed"}[2m]
+          ) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "⚠️ Có message trong send_failed topic"
+          description: >
+            Topic send_failed đang có message mới.
+            retry-service đang xử lý retry.
+            Theo dõi dead_letter để biết kết quả.
+
+      - alert: RetryTopicActive
+        expr: >
+          increase(
+            kafka_topic_partition_current_offset{topic="send_retry"}[2m]
+          ) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "🔄 Retry đang diễn ra"
+          description: >
+            Topic send_retry đang có message.
+            backend-api đang thử lại gọi Facebook API.

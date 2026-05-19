@@ -1,15 +1,16 @@
 package com.dev.coreservice.consumer;
 
+import com.dev.coreservice.config.AppProperties;
 import com.dev.coreservice.model.*;
 import com.dev.coreservice.pipeline.AiClassifier;
 import com.dev.coreservice.pipeline.DecisionEngine;
+import com.dev.coreservice.pipeline.ReplyCommandPublisher;
 import com.dev.coreservice.pipeline.SpamDetector;
 import com.dev.coreservice.service.EventStatusService;
-import com.dev.coreservice.service.RetryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.support.Acknowledgment;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
@@ -30,9 +31,11 @@ public class RawEventConsumer {
     private final SpamDetector spamDetector;
     private final AiClassifier aiClassifier;
     private final DecisionEngine decisionEngine;
-    private final RetryService retryService;
+    private final ReplyCommandPublisher replyCommandPublisher;  // ← THAY RetryService
+
     private final EventStatusService eventStatusService;
-    private final org.springframework.kafka.core.KafkaTemplate<String, NormalizedEvent> kafkaTemplate;
+    private final AppProperties props;
+    private final KafkaTemplate<String, NormalizedEvent> kafkaTemplate;
 
     @KafkaListener(
             topics = "raw_events",
@@ -43,36 +46,48 @@ public class RawEventConsumer {
                         @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
                         @Header(KafkaHeaders.OFFSET) long offset) {
 
-        log.info("[Consumer] Received event={} type={} partition={} offset={}",
+        log.info("[Consumer] event={} type={} partition={} offset={}",
                 event.getEventId(), event.getEventType(), partition, offset);
 
-        // Bước 1: Đánh dấu đã nhận
+        String pageId = props.getFacebook().getPageId();
+        if (pageId != null && pageId.equals(event.getSenderId())) {
+            log.info("[Consumer] Skipping own page event");
+            return;
+        }
+        if (event.getSenderId() == null || event.getSenderId().isBlank()) {
+            log.warn("[Consumer] Skipping blank senderId: {}", event.getEventId());
+            return;
+        }
+
+        // đánh dấu là đã nhận event đó từ topic raw_events
         eventStatusService.markReceived(event.getEventId());
 
         try {
-            // Bước 2: Kiểm tra spam (rule-based, nhanh)
+            // check spam trước khi call api AI -> decision engine
             SpamResult spamResult = spamDetector.check(event);
 
-            // Bước 3: AI classification (chỉ chạy khi không phải hard spam)
             ClassificationResult classification;
+            //nếu event bị đánh dấu là spam thì build object classification với nội dung bên dưới
             if (spamResult.isHardSpam() || spamResult.isBlacklisted()) {
-                // Short-circuit: không cần AI cho hard spam rõ ràng
                 classification = ClassificationResult.builder()
                         .intent("spam").sentiment("neutral")
                         .requiresReply(false).confidence(1.0).fallback(false)
                         .build();
             } else {
+                // call api AI
                 classification = aiClassifier.classify(event);
             }
 
-            // Bước 4: Ra quyết định
+            // đưa ra decision dựa vào classification
             Decision decision = decisionEngine.decide(event, spamResult, classification);
 
-            // Bước 5: Thực thi (với retry)
-            retryService.executeWithRetry(event, decision);
+            // Publish command → backend-api sẽ thực thi
+            replyCommandPublisher.publish(event, decision, classification);
 
         } catch (Exception e) {
             log.error("[Consumer] Unhandled error for event {}: {}", event.getEventId(), e.getMessage(), e);
+            // đánh dấu là lỗi để send event vào topic dead_letter_events
+            // và retry-service sẽ consume để tiếp tục process
             eventStatusService.markFailed(event.getEventId(), e.getMessage(), 0);
             kafkaTemplate.send("dead_letter_events", event.getEventId(), event);
         }

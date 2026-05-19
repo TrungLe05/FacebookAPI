@@ -63,9 +63,16 @@ public class DecisionEngine {
     }
 
     private Decision decideByAi(ClassificationResult c) {
-        // Confidence quá thấp → bỏ qua
-        if (c.isFallback() || c.getConfidence() < 0.3) {
+        // Confidence quá thấp (AI fail hoàn toàn, không có keyword nào khớp) → bỏ qua
+        if (c.getConfidence() < 0.3) {
+            log.info("[DecisionEngine] Confidence={} too low → IGNORE", c.getConfidence());
             return Decision.IGNORE;
+        }
+
+        // Nếu là keyword fallback (confidence=0.6) vẫn cho qua để AUTO_REPLY
+        if (c.isFallback()) {
+            log.info("[DecisionEngine] Keyword fallback with confidence={} → proceeding with intent={}",
+                    c.getConfidence(), c.getIntent());
         }
 
         return switch (c.getIntent()) {

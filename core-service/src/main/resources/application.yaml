@@ -10,7 +10,6 @@ spring:
     consumer:
       group-id: core-service-group
       auto-offset-reset: earliest
-      # Không dùng type headers từ producer để linh hoạt hơn
       properties:
         spring.json.trusted.packages: "*"
     producer:
@@ -21,8 +20,8 @@ spring:
 
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
       timeout: 3000ms
       lettuce:
         pool:
@@ -30,23 +29,23 @@ spring:
           max-idle: 5
 
 facebook:
-  page-access-token: ${PAGE_ACCESS_TOKEN:DISABLED}
+  page-access-token: ${PAGE_ACCESS_TOKEN}
   base-url: https://graph.facebook.com/v21.0
   graph-api-version: v21.0
   page-id: ${PAGE_ID:}
-  mock-enabled: true
+  mock-enabled: false
 
 ai:
   gemini:
-    api-key: ${GEMINI_API_KEY:DISABLED}
+    api-key: ${GEMINI_API_KEY}
     model: gemini-1.5-flash-latest
     endpoint: https://generativelanguage.googleapis.com/v1beta/models
   groq:
-    api-key: ${GROQ_API_KEY:DISABLED}
+    api-key: ${GROQ_API_KEY}
     model: llama-3.1-8b-instant
     endpoint: https://api.groq.com/openai/v1/chat/completions
   anthropic:
-    api-key: ${ANTHROPIC_KEY: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}
+    api-key: ${ANTHROPIC_KEY}
     model: claude-haiku-4-5-20251001
     endpoint: https://api.anthropic.com/v1/messages
 

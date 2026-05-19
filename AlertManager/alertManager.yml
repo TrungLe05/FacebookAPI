@@ -1,0 +1,81 @@
+global:
+  slack_api_url: "${SLACK_WEBHOOK_URL}"  # ← paste URL vừa copy
+  smtp_smarthost: "smtp.gmail.com:587"
+  smtp_from: "trungrua951@gmail.com"
+  smtp_auth_username: "trungrua951@gmail.com"
+  smtp_auth_password: "uozboflpniocvqyy"
+  smtp_require_tls: true
+
+route:
+  receiver: "default"
+  group_wait: 10s
+  group_interval: 5m
+  repeat_interval: 1h
+  routes:
+    - match:
+        alertname: DeadLetterQueueReceived
+      receiver: "critical-all-channels"
+      group_wait: 0s
+      repeat_interval: 30m
+    - match:
+        severity: warning
+      receiver: "warning-channels"
+      group_wait: 30s
+
+receivers:
+  - name: "default"
+    slack_configs:
+      - channel: "#all-coding-workspace"
+        send_resolved: true
+        title: "[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}"
+        text: "{{ range .Alerts }}{{ .Annotations.description }}{{ end }}"
+
+  - name: "critical-all-channels"
+    slack_configs:
+      - channel: "#all-coding-workspace"
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        title: "Dead Letter Queue Alert"
+        text: |
+          {{ range .Alerts }}
+          *Mo ta:* {{ .Annotations.description }}
+          *Thoi gian:* {{ .StartsAt }}
+          *Kafka UI:* http://localhost:8081
+          {{ end }}
+    email_configs:
+      - to: "cuba05052005@gmail.com"
+        send_resolved: true
+        headers:
+          Subject: "Dead Letter Queue Alert - FB API"
+        html: |
+          <h2>Dead Letter Queue nhan message moi!</h2>
+          {{ range .Alerts }}
+          <p><b>Mo ta:</b> {{ .Annotations.description }}</p>
+          <p><b>Thoi gian:</b> {{ .StartsAt }}</p>
+          {{ end }}
+          <p>Kiem tra Kafka UI: http://localhost:8081</p>
+          <p>Kiem tra Prometheus: http://localhost:9090</p>
+
+  - name: "warning-channels"
+    slack_configs:
+      - channel: "#all-coding-workspace"
+        send_resolved: true
+        title: "Warning - {{ .GroupLabels.alertname }}"
+        text: "{{ range .Alerts }}{{ .Annotations.description }}{{ end }}"
+    email_configs:
+      - to: "cuba05052005@gmail.com"
+        send_resolved: true
+        headers:
+          Subject: "Warning - FB API System"
+        html: |
+          <h3>Warning: {{ .GroupLabels.alertname }}</h3>
+          {{ range .Alerts }}
+          <p>{{ .Annotations.description }}</p>
+          {{ end }}
+
+inhibit_rules:
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: ["alertname"]
