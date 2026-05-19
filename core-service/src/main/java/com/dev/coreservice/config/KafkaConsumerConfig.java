@@ -9,10 +9,11 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.listener.ContainerProperties;
+import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
+import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -26,48 +27,54 @@ public class KafkaConsumerConfig {
     @Value("${spring.kafka.consumer.group-id:core-service-group}")
     private String groupId;
 
-    /**
-     * ConsumerFactory cho NormalizedEvent.
-     * Dùng JsonDeserializer với trusted packages để tránh lỗi class-not-trusted.
-     */
     @Bean
     public ConsumerFactory<String, NormalizedEvent> consumerFactory() {
-        JsonDeserializer<NormalizedEvent> deserializer = new JsonDeserializer<>(NormalizedEvent.class, false);
-        deserializer.addTrustedPackages("*");
-        deserializer.setUseTypeMapperForKey(false);
-
         Map<String, Object> config = new HashMap<>();
         config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         config.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
-        config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-        config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
         config.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        // Đọc nhiều record mỗi lần để tăng throughput khi có bài viral
         config.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 100);
+        config.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
 
-        return new DefaultKafkaConsumerFactory<>(config, new StringDeserializer(), deserializer);
+        // ── ErrorHandlingDeserializer bọc bên ngoài ───────────────────────
+        // Khi message không deserialize được → skip, không crash consumer
+        config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
+                ErrorHandlingDeserializer.class);
+        config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
+                ErrorHandlingDeserializer.class);
+
+        // Deserializer thật nằm bên trong ErrorHandlingDeserializer
+        config.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS,
+                StringDeserializer.class.getName());
+        config.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS,
+                JsonDeserializer.class.getName());
+
+        // Config cho JsonDeserializer bên trong
+        config.put(JsonDeserializer.TRUSTED_PACKAGES, "*");
+        config.put(JsonDeserializer.VALUE_DEFAULT_TYPE,
+                NormalizedEvent.class.getName());
+        config.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
+
+        // Không truyền instance vào constructor — để Spring tự khởi tạo từ config
+        return new DefaultKafkaConsumerFactory<>(config);
     }
 
-    /**
-     * Listener container factory với 3 concurrent threads để xử lý song song.
-     */
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, NormalizedEvent> kafkaListenerContainerFactory(
+    public ConcurrentKafkaListenerContainerFactory<String, NormalizedEvent>
+    kafkaListenerContainerFactory(
             ConsumerFactory<String, NormalizedEvent> consumerFactory) {
+
         ConcurrentKafkaListenerContainerFactory<String, NormalizedEvent> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);
         factory.setConcurrency(3);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
-        return factory;
-    }
 
-    /**
-     * KafkaTemplate để publish dead_letter_events.
-     */
-    @Bean
-    public KafkaTemplate<String, NormalizedEvent> kafkaTemplate(
-            ProducerFactory<String, NormalizedEvent> producerFactory) {
-        return new KafkaTemplate<>(producerFactory);
+        // ── DefaultErrorHandler xử lý cả SerializationException ──────────
+        // FixedBackOff(0, 0) = không retry, skip ngay message lỗi
+        factory.setCommonErrorHandler(
+                new DefaultErrorHandler(new FixedBackOff(0L, 0L)));
+
+        return factory;
     }
 }

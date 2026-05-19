@@ -41,31 +41,49 @@ public class AiClassifier {
             }
             
             Rules:
-            - ask_price: user asks about price, availability, shipping
-            - complaint: user reports issue, unhappy, demands refund
-            - compliment: user praises, positive feedback
-            - spam: promotional, off-topic, gibberish
-            - other: anything else
+            - ask_price: user asks about price, availability, shipping, ordering.
+              Vietnamese signals: giá, giá bao nhiêu, bao nhiêu tiền, giá sao, mua ở đâu, đặt hàng, ship, giao hàng, inbox, ib, pm, còn hàng, order, tư vấn
+            - complaint: user reports issue, unhappy, demands refund, criticizes quality.
+              Vietnamese signals: tệ, kém, lỗi, hỏng, không tốt, hoàn tiền, chờ lâu, thất vọng
+            - compliment: user praises, positive feedback, recommends.
+              Vietnamese signals: hay, tốt, đẹp, ngon, chất lượng, uy tín, thích, recommend
+            - spam: promotional, off-topic link, gibberish, unrelated content
+            - other: anything that does NOT fit the above categories
+            
+            Important: Treat any question or inquiry about price/cost/availability as ask_price, \
+            even short phrases like "giá sao", "bao nhiêu", "giá?", "có hàng không".
             
             Comment: "%s"
             """;
 
     public ClassificationResult classify(NormalizedEvent event) {
-        log.info("[AiClassifier] Using model: {} endpoint: {}",
-                props.getAi().getGroq().getModel(),
-                props.getAi().getGroq().getEndpoint());
+        log.info("[AiClassifier] Classifying event={} content='{}'",
+                event.getEventId(), event.getContent());
 
+        ClassificationResult result;
         try {
-            return callGroqApi(event);
+            result = callGroqApi(event);
         } catch (Exception e) {
-            log.error("[AiClassifier] Groq failed or not configured: {}. Trying Gemini...", e.getMessage());
+            log.warn("[AiClassifier] Groq failed: {}. Trying Gemini...", e.getMessage());
             try {
-                return callGeminiApi(event);
+                result = callGeminiApi(event);
             } catch (Exception ex) {
-                log.error("[AiClassifier] Gemini also failed: {}. Using fallback.", ex.getMessage());
-                return buildFallback();
+                log.warn("[AiClassifier] Gemini also failed: {}. Using keyword fallback.", ex.getMessage());
+                return buildKeywordFallback(event.getContent());
             }
         }
+
+        // Post-check: AI trả về "other" → thử keyword để tránh miss classify tiếng Việt
+        if ("other".equals(result.getIntent())) {
+            ClassificationResult keywordResult = buildKeywordFallback(event.getContent());
+            if (!"other".equals(keywordResult.getIntent())) {
+                log.info("[AiClassifier] AI returned 'other' but keyword matched '{}' → overriding",
+                        keywordResult.getIntent());
+                return keywordResult;
+            }
+        }
+
+        return result;
     }
 
     private ClassificationResult callGroqApi(NormalizedEvent event) {
@@ -131,43 +149,6 @@ public class AiClassifier {
         }
     }
 
-    private ClassificationResult callClaudeApi(NormalizedEvent event) {
-        String apiKey = props.getAi().getAnthropic().getApiKey();
-        if (apiKey == null || apiKey.isBlank() || apiKey.equals("DISABLED")) {
-            throw new RuntimeException("Anthropic API key not configured");
-        }
-
-        String prompt = PROMPT_TEMPLATE.formatted(sanitize(event.getContent()));
-        Map<String, Object> requestBody = Map.of(
-                "model", props.getAi().getAnthropic().getModel(),
-                "max_tokens", 200,
-                "messages", List.of(Map.of(
-                        "role", "user",
-                        "content", prompt
-                ))
-        );
-
-        String responseJson = webClient.post()
-                .uri(props.getAi().getAnthropic().getEndpoint())
-                .header("Content-Type", "application/json")
-                .header("x-api-key", apiKey)
-                .header("anthropic-version", "2023-06-01")
-                .bodyValue(requestBody)
-                .retrieve()
-                .onStatus(status -> status.is4xxClientError(), response ->
-                        response.bodyToMono(String.class).flatMap(body -> {
-                            log.error("[AiClassifier] Claude API 4xx body: {}", body);
-                            return Mono.error(new RuntimeException("Claude error: " + body));
-                        })
-                )
-                .bodyToMono(String.class)
-                .timeout(Duration.ofSeconds(10))
-                .block();
-
-        if (responseJson == null) throw new RuntimeException("Empty response from Claude");
-        return parseClaudeResponse(responseJson);
-    }
-
     private ClassificationResult callGeminiApi(NormalizedEvent event) {
         String apiKey = props.getAi().getGemini().getApiKey();
         if (apiKey == null || apiKey.isBlank() || apiKey.equals("DISABLED")) {
@@ -204,29 +185,6 @@ public class AiClassifier {
         return parseGeminiResponse(responseJson);
     }
 
-    private ClassificationResult parseClaudeResponse(String responseJson) {
-        try {
-            JsonNode root = objectMapper.readTree(responseJson);
-            // Claude trả về content[0].text
-            String text = root
-                    .path("content").get(0)
-                    .path("text").asText();
-
-            // Parse JSON result
-            JsonNode result = objectMapper.readTree(text.trim());
-            return ClassificationResult.builder()
-                    .intent(result.path("intent").asText("other"))
-                    .sentiment(result.path("sentiment").asText("neutral"))
-                    .requiresReply(result.path("requires_reply").asBoolean(false))
-                    .confidence(result.path("confidence").asDouble(0.5))
-                    .fallback(false)
-                    .build();
-        } catch (Exception e) {
-            log.error("[AiClassifier] Failed to parse Claude response: {}", e.getMessage());
-            return buildFallback();
-        }
-    }
-
     private ClassificationResult parseGeminiResponse(String responseJson) {
         try {
             JsonNode root = objectMapper.readTree(responseJson);
@@ -255,7 +213,68 @@ public class AiClassifier {
     }
 
     /**
-     * Fallback khi AI không available – dùng keyword heuristic đơn giản.
+     * Fallback dựa trên keyword khi cả Groq lẫn Gemini đều fail.
+     * Ưu tiên detect các intent phổ biến để không bỏ lỡ AUTO_REPLY.
+     */
+    private ClassificationResult buildKeywordFallback(String content) {
+        if (content == null || content.isBlank()) {
+            return buildFallback();
+        }
+        String lower = content.toLowerCase().trim();
+
+        // ── Hỏi giá / tư vấn ─────────────────────────────────────────────────
+        if (containsAny(lower, List.of(
+                "giá", "bao nhiêu", "giá sao", "giá bao",
+                "price", "cost", "phí", "mua", "order", "đặt hàng", "đặt",
+                "inbox", "ib", "pm", "dm", "nhắn tin", "ship", "giao hàng",
+                "còn hàng", "hàng còn", "có hàng", "tư vấn", "mua ở đâu"
+        ))) {
+            log.info("[AiClassifier] Keyword fallback → ask_price (matched in '{}')", lower);
+            return ClassificationResult.builder()
+                    .intent("ask_price").sentiment("neutral")
+                    .requiresReply(true).confidence(0.65).fallback(true)
+                    .build();
+        }
+
+        // ── Khen ngợi ─────────────────────────────────────────────────────────
+        if (containsAny(lower, List.of(
+                "hay lắm", "tốt lắm", "đẹp lắm", "ngon lắm", "chất lượng",
+                "uy tín", "thích", "recommend", "love", "great", "nice",
+                "awesome", "tuyệt", "xuất sắc"
+        ))) {
+            log.info("[AiClassifier] Keyword fallback → compliment (matched in '{}')", lower);
+            return ClassificationResult.builder()
+                    .intent("compliment").sentiment("positive")
+                    .requiresReply(true).confidence(0.65).fallback(true)
+                    .build();
+        }
+
+        // ── Khiếu nại ─────────────────────────────────────────────────────────
+        if (containsAny(lower, List.of(
+                "tệ", "kém", "lỗi", "hỏng", "không tốt", "hoàn tiền",
+                "refund", "bad", "worst", "terrible", "chờ lâu",
+                "thất vọng", "không hài lòng", "bị lỗi", "trả hàng"
+        ))) {
+            log.info("[AiClassifier] Keyword fallback → complaint (matched in '{}')", lower);
+            return ClassificationResult.builder()
+                    .intent("complaint").sentiment("negative")
+                    .requiresReply(false).confidence(0.65).fallback(true)
+                    .build();
+        }
+
+        log.info("[AiClassifier] Keyword fallback → other (no keyword matched for '{}')", lower);
+        return buildFallback();
+    }
+
+    private boolean containsAny(String text, List<String> keywords) {
+        for (String kw : keywords) {
+            if (text.contains(kw)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Hard fallback cuối cùng – không làm gì (IGNORE).
      */
     private ClassificationResult buildFallback() {
         return ClassificationResult.builder()
