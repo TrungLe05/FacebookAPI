@@ -18,5 +18,6 @@ public class SpamResult {
     private boolean softSpam;           // nghi spam → queue review
     private boolean blacklisted;        // sender đã trong blacklist
     private boolean repeatOffender;     // lặp lại ≥ 3 lần trong 24h
+    private boolean malicious;
     private String reason;              // mô tả lý do
 }

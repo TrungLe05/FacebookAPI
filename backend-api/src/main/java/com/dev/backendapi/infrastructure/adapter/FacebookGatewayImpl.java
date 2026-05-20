@@ -139,7 +139,14 @@ public class FacebookGatewayImpl implements FacebookGateway {
                 .queryParam("summary", "true")
                 .queryParam("access_token", props.getToken())
                 .toUriString();
-        Map<String, Object> raw = get(url);
+        Map<String, Object> raw = null;
+        try {
+            raw = get(url);
+        } catch (HttpClientErrorException e) {
+            String body = e.getResponseBodyAsString();
+            log.error("[FacebookGateway] HTTP {} body: {}", e.getStatusCode(), body);
+            throw parseAndWrap("get post like " , body);
+        }
         Map<String, Object> summary = (Map<String, Object>) raw.get("summary");
         if (summary == null) return LikeSummary.builder().totalCount(0L).build();
         return LikeSummary.builder()

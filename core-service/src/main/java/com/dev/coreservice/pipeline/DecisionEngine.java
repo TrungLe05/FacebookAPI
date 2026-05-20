@@ -40,14 +40,18 @@ public class DecisionEngine {
         } else if (spam.isHardSpam() && spam.isRepeatOffender()) {
             decision = Decision.BLACKLIST_AND_HIDE;
 
+        } else if (spam.isHardSpam() && spam.isMalicious()) {
+            // Link độc hại / scam → ẩn + queue review cho admin
+            decision = Decision.HIDE_AND_QUEUE_REVIEW;
+
         } else if (spam.isHardSpam()) {
+            // Spam nhẹ có link thường → ẩn ngay
             decision = Decision.HIDE_IMMEDIATELY;
 
         } else if (spam.isSoftSpam()) {
             decision = Decision.HIDE_AND_QUEUE_REVIEW;
 
         } else {
-            // Không phải spam → quyết định dựa trên AI
             decision = decideByAi(classification);
         }
 

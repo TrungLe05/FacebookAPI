@@ -7,7 +7,7 @@ facebook:
     access-token: ${PAGE_ACCESS_TOKEN}
   graph:
     api:
-      url: https//graph.facebook.com/v19.0
+      url: https://graph.facebook.com/v19.0
 
 spring:
   datasource:

@@ -4,6 +4,7 @@ import com.dev.coreservice.model.ClassificationResult;
 import com.dev.coreservice.model.Decision;
 import com.dev.coreservice.model.NormalizedEvent;
 import com.dev.coreservice.model.ReplyCommand;
+import com.dev.coreservice.service.BlacklistService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -19,6 +20,7 @@ public class ReplyCommandPublisher {
     private final KafkaTemplate<String, ReplyCommand> replyCommandKafkaTemplate;
 
     private static final String REPLY_COMMANDS_TOPIC = "reply_commands";
+    private final BlacklistService blacklistService;    // ← inject
 
     // Map Decision → action string
     private static final String REPLY_ASK_PRICE =
@@ -29,6 +31,12 @@ public class ReplyCommandPublisher {
             "Cảm ơn bạn đã quan tâm! Shop hỗ trợ giao hàng toàn quốc. " +
                     "Vui lòng inbox để được tư vấn chi tiết hơn nhé 😊";
     public void publish(NormalizedEvent event, Decision decision, ClassificationResult classification) {
+        if (decision == Decision.BLACKLIST_AND_HIDE) {
+            blacklistService.addToBlacklist(event.getSenderId());
+            log.warn("[ReplyCommandPublisher] Sender {} added to blacklist",
+                    event.getSenderId());
+        }
+
         String action = mapDecisionToAction(decision);
         String replyText = resolveReplyText(decision, classification.getIntent());
 

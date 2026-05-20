@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
@@ -31,9 +32,15 @@ public class SpamDetector {
     // Key prefix cho repeat tracking
     private static final String REPEAT_KEY_PREFIX = "spam:repeat:";
 
+    private static final List<String> MALICIOUS_KEYWORDS = List.of(
+            "malware", "scam", "hack", "free-gift", "click-here",
+            "casino", "cờ bạc", "cá độ", "kiếm tiền nhanh",
+            "trúng thưởng", "nhận quà", "miễn phí 100%"
+    );
+
     public SpamResult check(NormalizedEvent event) {
         String senderId = event.getSenderId();
-        String content = event.getContent();
+        String content  = event.getContent();
 
         if (content == null || content.isBlank()) {
             return SpamResult.builder().spam(false).build();
@@ -43,31 +50,44 @@ public class SpamDetector {
         if (blacklistService.isBlacklisted(senderId)) {
             log.info("[SpamDetector] Sender {} is blacklisted", senderId);
             return SpamResult.builder()
-                    .spam(true)
-                    .hardSpam(true)
-                    .blacklisted(true)
+                    .spam(true).hardSpam(true).blacklisted(true)
                     .reason("Sender in blacklist")
                     .build();
         }
 
-        // 2. Kiểm tra URL / link rút gọn (hard spam)
-        Pattern urlPattern = Pattern.compile(props.getSpam().getUrlPattern(),
-                Pattern.CASE_INSENSITIVE);
-        if (urlPattern.matcher(content).find()) {
+        // 2. Kiểm tra URL
+        Pattern urlPattern = Pattern.compile(
+                props.getSpam().getUrlPattern(), Pattern.CASE_INSENSITIVE);
+        boolean hasUrl = urlPattern.matcher(content).find();
+
+        if (hasUrl) {
+            String lower = content.toLowerCase();
+
+            // 2a. Link độc hại / scam rõ ràng
+            boolean isMalicious = MALICIOUS_KEYWORDS.stream()
+                    .anyMatch(lower::contains);
+
+            if (isMalicious) {
+                log.info("[SpamDetector] Malicious link detected from sender {}", senderId);
+                return SpamResult.builder()
+                        .spam(true).hardSpam(true).malicious(true)
+                        .reason("Malicious link or scam content detected")
+                        .build();
+            }
+
+            // 2b. Link thông thường
             log.info("[SpamDetector] Hard spam - URL detected from sender {}", senderId);
             return SpamResult.builder()
-                    .spam(true)
-                    .hardSpam(true)
+                    .spam(true).hardSpam(true).malicious(false)
                     .reason("Contains URL or short link")
                     .build();
         }
 
-        // 3. Kiểm tra nội dung lặp lại (soft → hard nếu vượt threshold)
+        // 3. Kiểm tra nội dung lặp lại
         String contentHash = hashContent(content);
-        String repeatKey = REPEAT_KEY_PREFIX + senderId + ":" + contentHash;
-        Long repeatCount = redisTemplate.opsForValue().increment(repeatKey);
+        String repeatKey   = REPEAT_KEY_PREFIX + senderId + ":" + contentHash;
+        Long repeatCount   = redisTemplate.opsForValue().increment(repeatKey);
         if (repeatCount == 1) {
-            // Set TTL chỉ lần đầu tiên
             redisTemplate.expire(repeatKey,
                     props.getSpam().getRepeatWindowHours(), TimeUnit.HOURS);
         }
@@ -76,18 +96,16 @@ public class SpamDetector {
         if (repeatCount != null && repeatCount >= threshold) {
             log.info("[SpamDetector] Repeat spam {} times from sender {}", repeatCount, senderId);
             return SpamResult.builder()
-                    .spam(true)
-                    .hardSpam(true)
-                    .repeatOffender(true)
+                    .spam(true).hardSpam(true).repeatOffender(true)
                     .reason("Repeated content " + repeatCount + " times in "
                             + props.getSpam().getRepeatWindowHours() + "h")
                     .build();
         }
         if (repeatCount != null && repeatCount == 2) {
-            // Lần 2: soft spam, warning
+            log.info("[SpamDetector] Soft spam - duplicate content ({}/3) from sender {}",
+                    repeatCount, senderId);
             return SpamResult.builder()
-                    .spam(true)
-                    .softSpam(true)
+                    .spam(true).softSpam(true)
                     .reason("Duplicate content detected (" + repeatCount + "/3)")
                     .build();
         }
