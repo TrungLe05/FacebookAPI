@@ -41,10 +41,10 @@ public class DecisionEngine {
             decision = Decision.BLACKLIST_AND_HIDE;
 
         } else if (spam.isHardSpam()) {
-            decision = Decision.HIDE_AND_QUEUE_REVIEW;
+            decision = Decision.HIDE_IMMEDIATELY;
 
         } else if (spam.isSoftSpam()) {
-            decision = Decision.HIDE_IMMEDIATELY;
+            decision = Decision.HIDE_AND_QUEUE_REVIEW;
 
         } else {
             // Không phải spam → quyết định dựa trên AI
@@ -80,6 +80,7 @@ public class DecisionEngine {
             case "complaint" -> Decision.QUEUE_FOR_MANUAL_REPLY;
             case "compliment" -> Decision.AUTO_REPLY_THANK_YOU;
             case "spam" -> Decision.HIDE_IMMEDIATELY;
+            case "ask_info" -> Decision.AUTO_REPLY;
             default -> Decision.IGNORE;
         };
     }

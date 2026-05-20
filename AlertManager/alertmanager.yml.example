@@ -1,9 +1,9 @@
 global:
-  slack_api_url: "https://hooks.slack.com/services/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"  # ← paste URL vừa copy
+  slack_api_url: "YOUR_SLACK_WEBHOOK"  # ← paste URL vừa copy
   smtp_smarthost: "smtp.gmail.com:587"
-  smtp_from: "trungrua951@gmail.com"
-  smtp_auth_username: "trungrua951@gmail.com"
-  smtp_auth_password: "uozboflpniocvqyy"
+  smtp_from: "YOUR_EMAIL"
+  smtp_auth_username: "YOUR_EMAIL"
+  smtp_auth_password: "YOUR_APP_PASSWORD"
   smtp_require_tls: true
 
 route:
@@ -43,7 +43,7 @@ receivers:
           *Kafka UI:* http://localhost:8081
           {{ end }}
     email_configs:
-      - to: "cuba05052005@gmail.com"
+      - to: "OTHER_EMAIL"
         send_resolved: true
         headers:
           Subject: "Dead Letter Queue Alert - FB API"
@@ -63,7 +63,7 @@ receivers:
         title: "Warning - {{ .GroupLabels.alertname }}"
         text: "{{ range .Alerts }}{{ .Annotations.description }}{{ end }}"
     email_configs:
-      - to: "cuba05052005@gmail.com"
+      - to: "OTHER_EMAIL"
         send_resolved: true
         headers:
           Subject: "Warning - FB API System"

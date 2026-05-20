@@ -29,32 +29,52 @@ public class AiClassifier {
     private final ObjectMapper objectMapper;
 
     private static final String PROMPT_TEMPLATE = """
-            Classify the following Facebook comment strictly in JSON format. \
-            Do NOT include markdown, only raw JSON.
-            
-            JSON schema:
-            {
-              "intent": "one of [ask_price, complaint, compliment, spam, other]",
-              "sentiment": "one of [positive, neutral, negative]",
-              "requires_reply": true or false,
-              "confidence": number between 0.0 and 1.0
-            }
-            
-            Rules:
-            - ask_price: user asks about price, availability, shipping, ordering.
-              Vietnamese signals: giá, giá bao nhiêu, bao nhiêu tiền, giá sao, mua ở đâu, đặt hàng, ship, giao hàng, inbox, ib, pm, còn hàng, order, tư vấn
-            - complaint: user reports issue, unhappy, demands refund, criticizes quality.
-              Vietnamese signals: tệ, kém, lỗi, hỏng, không tốt, hoàn tiền, chờ lâu, thất vọng
-            - compliment: user praises, positive feedback, recommends.
-              Vietnamese signals: hay, tốt, đẹp, ngon, chất lượng, uy tín, thích, recommend
-            - spam: promotional, off-topic link, gibberish, unrelated content
-            - other: anything that does NOT fit the above categories
-            
-            Important: Treat any question or inquiry about price/cost/availability as ask_price, \
-            even short phrases like "giá sao", "bao nhiêu", "giá?", "có hàng không".
-            
-            Comment: "%s"
-            """;
+        Classify the following Facebook comment strictly in JSON format. \
+        Do NOT include markdown, only raw JSON.
+        
+        JSON schema:
+        {
+          "intent": "one of [ask_price, ask_info, complaint, compliment, spam, other]",
+          "sentiment": "one of [positive, neutral, negative]",
+          "requires_reply": true or false,
+          "confidence": number between 0.0 and 1.0
+        }
+        
+        Rules:
+        - ask_price: user asks SPECIFICALLY about price or cost.
+          Vietnamese signals: giá, giá bao nhiêu, bao nhiêu tiền, giá sao, giá?, mua bao nhiêu, 
+          giá mấy, chi phí, phí, tiền, bao nhiêu vậy, giá như thế nào
+          
+        - ask_info: user asks about product/service information, availability, shipping policy, 
+          ordering process, but NOT about price.
+          Vietnamese signals: giao hàng toàn quốc, ship được không, còn hàng không, 
+          có bán không, đặt hàng như thế nào, inbox, ib, pm, tư vấn, thông tin, 
+          chính sách, bảo hành, đổi trả, size, màu, chất liệu, hướng dẫn
+          
+        - complaint: user reports issue, unhappy, demands refund, criticizes quality.
+          Vietnamese signals: tệ, kém, lỗi, hỏng, không tốt, hoàn tiền, chờ lâu, 
+          thất vọng, chưa nhận được, sai hàng, kém chất lượng
+          
+        - compliment: user praises, gives positive feedback, recommends.
+          Vietnamese signals: hay, tốt, đẹp, ngon, chất lượng, uy tín, thích, 
+          recommend, hài lòng, tuyệt, xuất sắc
+          
+        - spam: promotional content, off-topic link, gibberish, unrelated advertisement,
+          repeated content, suspicious URL
+          
+        - other: anything that does NOT clearly fit the above categories,
+          including greetings, general comments, unclear intent
+        
+        Important rules:
+        - "giao hàng toàn quốc", "ship không", "còn hàng không" → ask_INFO (not ask_price)
+        - "giá bao nhiêu", "bao nhiêu tiền", "giá sao" → ask_PRICE
+        - Short ambiguous phrases like "bao nhiêu" without context → ask_price
+        - If user asks BOTH price and info → use ask_price
+        - Spam must contain link, advertisement, or clearly unrelated content
+        - When unsure between ask_price and ask_info → choose ask_info
+        
+        Comment: "%s"
+        """;
 
     public ClassificationResult classify(NormalizedEvent event) {
         log.info("[AiClassifier] Classifying event={} content='{}'",

@@ -41,7 +41,7 @@ public class FacebookSenderService {
         try {
             dispatch(command);
             idempotencyService.markProcessed(commandId);
-            log.info("[FacebookSenderService] ✅ command={} action={} done",
+            log.info("[FacebookSenderService] command={} action={} done",
                     commandId, command.getAction());
 
         } catch (FacebookNonRetryableException e) {
@@ -51,12 +51,12 @@ public class FacebookSenderService {
 
         } catch (FacebookApiException e) {
             // Lỗi tạm thời → publish send_failed để retry-service xử lý
-            log.error("[FacebookSenderService] ❌ command={} retry={} error={}",
+            log.error("[FacebookSenderService] command={} retry={} error={}",
                     commandId, retryCount, e.getMessage());
             publishSendFailed(command, retryCount, e.getMessage());
         } catch (Exception e) {
             // Lỗi tạm thời → publish send_failed để retry-service xử lý
-            log.error("[FacebookSenderService] ❌ command={} retry={} error={}",
+            log.error("[FacebookSenderService] command={} retry={} error={}",
                     commandId, retryCount, e.getMessage());
             publishSendFailed(command, retryCount, e.getMessage());
         }

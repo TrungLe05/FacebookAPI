@@ -87,7 +87,6 @@ services:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
     environment:
       - TZ=Asia/Ho_Chi_Minh
-      - SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
     restart: unless-stopped
 
   db:

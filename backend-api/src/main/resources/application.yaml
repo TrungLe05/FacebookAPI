@@ -20,3 +20,29 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: false
+resilience4j:
+  circuitbreaker:
+    instances:
+      facebookApi:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 12
+        minimum-number-of-calls: 12
+        failure-rate-threshold: 60           # 60% lỗi → mở mạch
+        wait-duration-in-open-state: 30s     # chờ 30s ở trạng thái OPEN
+        permitted-number-of-calls-in-half-open-state: 2
+        register-health-indicator: true
+        record-exceptions:
+          - java.lang.Exception
+        ignore-exceptions:
+          - com.dev.backendapi.infrastructure.exception.FacebookNonRetryableException
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,circuitbreakers
+  endpoint:
+    health:
+      show-details: always
+  health:
+    circuitbreakers:
+      enabled: true

@@ -25,10 +25,12 @@ public class ReplyCommandPublisher {
             "Cảm ơn bạn đã quan tâm! Vui lòng inbox để được tư vấn giá chi tiết nhé 😊";
     private static final String REPLY_THANK_YOU =
             "Cảm ơn bạn rất nhiều! Sự ủng hộ của bạn là động lực lớn nhất 🙏❤️";
-
+    private static final String REPLY_ASK_INFO =
+            "Cảm ơn bạn đã quan tâm! Shop hỗ trợ giao hàng toàn quốc. " +
+                    "Vui lòng inbox để được tư vấn chi tiết hơn nhé 😊";
     public void publish(NormalizedEvent event, Decision decision, ClassificationResult classification) {
         String action = mapDecisionToAction(decision);
-        String replyText = resolveReplyText(decision);
+        String replyText = resolveReplyText(decision, classification.getIntent());
 
         ReplyCommand command = ReplyCommand.builder()
                 .schemaVersion(1)
@@ -69,9 +71,9 @@ public class ReplyCommandPublisher {
         };
     }
 
-    private String resolveReplyText(Decision decision) {
+    private String resolveReplyText(Decision decision, String intent) {
         return switch (decision) {
-            case AUTO_REPLY -> REPLY_ASK_PRICE;
+            case AUTO_REPLY -> intent.equals("ask_info") ? REPLY_ASK_INFO : REPLY_ASK_PRICE;
             case AUTO_REPLY_THANK_YOU -> REPLY_THANK_YOU;
             default -> null;
         };

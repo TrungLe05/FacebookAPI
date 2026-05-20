@@ -7,6 +7,7 @@ import com.dev.backendapi.infrastructure.exception.FacebookApiException;
 import com.dev.backendapi.infrastructure.exception.FacebookNonRetryableException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
@@ -149,19 +150,22 @@ public class FacebookGatewayImpl implements FacebookGateway {
     }
 
     @Override
+    @CircuitBreaker(name = "facebookApi", fallbackMethod = "hideCommentFallback")
     public boolean hideComment(String commentId) {
         if (commentId == null || commentId.isBlank()) {
             log.warn("[FacebookGateway] hideComment – commentId is null/blank");
             return false;
         }
         String url = withToken("/" + commentId);
+        log.info("[FacebookGateway] Build Url success: {}", url);
         log.info("[FacebookGateway] Hiding comment {}", commentId);
 
         try {
             Map<String, Object> result = callWithBody(url, HttpMethod.POST,
                     Map.of("is_hidden", true));
+            log.info("Result call Graph APIs: {}", result.toString());
             boolean success = Boolean.TRUE.equals(result.get("success"));
-            log.info("[FacebookGateway] hideComment {} → {}", commentId, success);
+            log.info("[FacebookGateway] hideComment {} -> {}", commentId, success);
             return success;
 
         } catch (HttpClientErrorException e) {
@@ -177,6 +181,7 @@ public class FacebookGatewayImpl implements FacebookGateway {
     }
 
     @Override
+    @CircuitBreaker(name = "facebookApi", fallbackMethod = "replyToCommentFallback")
     public String replyToComment(String commentId, String message) {
         if (commentId == null || commentId.isBlank()) {
             log.warn("[FacebookGateway] replyToComment – commentId is null/blank");
@@ -200,6 +205,7 @@ public class FacebookGatewayImpl implements FacebookGateway {
     }
 
     @Override
+    @CircuitBreaker(name = "facebookApi", fallbackMethod = "sendMessageFallback")
     public void sendMessage(String recipientId, String message) {
         if (recipientId == null || recipientId.isBlank()) {
             log.warn("[FacebookGateway] sendMessage – recipientId is null/blank");
@@ -243,6 +249,26 @@ public class FacebookGatewayImpl implements FacebookGateway {
             log.error("[FacebookGateway] HTTP {} deleting {}: {}", e.getStatusCode(), commentId, body);
             throw parseAndWrap("deleteComment " + commentId, body);
         }
+    }
+
+    // ── Fallback methods ──────────────────────────────────────────────────
+
+    public boolean hideCommentFallback(String commentId, Exception e) {
+        log.error("[CircuitBreaker] OPEN - hideComment skipped for {}: {}",
+                commentId, e.getMessage());
+        throw new RuntimeException("Circuit breaker OPEN: " + e.getMessage(), e);
+    }
+
+    public String replyToCommentFallback(String commentId, String message, Exception e) {
+        log.error("[CircuitBreaker] OPEN - replyToComment skipped for {}: {}",
+                commentId, e.getMessage());
+        throw new RuntimeException("Circuit breaker OPEN: " + e.getMessage(), e);
+    }
+
+    public void sendMessageFallback(String recipientId, String message, Exception e) {
+        log.error("[CircuitBreaker] OPEN - sendMessage skipped for {}: {}",
+                recipientId, e.getMessage());
+        throw new RuntimeException("Circuit breaker OPEN: " + e.getMessage(), e);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
